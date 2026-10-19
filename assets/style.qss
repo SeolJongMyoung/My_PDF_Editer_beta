@@ -1,0 +1,247 @@
+/* 전체 기본 폰트 및 흰색 바탕 */
+QMainWindow {
+    background-color: #ffffff;
+    font-family: "Malgun Gothic", "Segoe UI", sans-serif;
+    font-size: 12px;
+    color: #18181b;
+}
+
+/* 상단 1줄 고정 툴바 (모던 그레이스케일 톤) */
+QToolBar#TopMainToolbar {
+    background-color: #fafafa;
+    border-bottom: 1px solid #e4e4e7;
+    padding: 0px;
+    spacing: 0px;
+}
+QWidget#ToolbarRowContainer {
+    background-color: #fafafa;
+}
+
+/* 일반 툴바 버튼 (그레이스케일 미니멀 스타일) */
+QToolButton#ModernToolBtn {
+    background-color: transparent;
+    color: #3f3f46;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QToolButton#ModernToolBtn:hover {
+    background-color: #f4f4f5;
+    border-color: #e4e4e7;
+    color: #18181b;
+}
+QToolButton#ModernToolBtn:pressed {
+    background-color: #e4e4e7;
+}
+QToolButton#ModernToolBtn:disabled {
+    color: #cbd5e1;
+    background-color: transparent;
+    border-color: transparent;
+}
+QToolButton#ModernToolBtn:checked {
+    background-color: #e4e4e7;
+    color: #18181b;
+    border: 1px solid #a1a1aa;
+    font-weight: 700;
+}
+
+/* 모드 전환 세그먼트 캡슐 그룹 */
+QFrame#ModeSegmentGroup {
+    background-color: #f4f4f5;
+    border: 1px solid #e4e4e7;
+    border-radius: 7px;
+    padding: 2px;
+}
+QToolButton#SegmentToolBtn {
+    background-color: transparent;
+    color: #52525b;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QToolButton#SegmentToolBtn:hover {
+    color: #18181b;
+    background-color: #ebebf0;
+}
+QToolButton#SegmentToolBtn:checked {
+    background-color: #ffffff;
+    color: #18181b;
+    border: 1px solid #d4d4d8;
+    font-weight: 700;
+}
+
+/* 툴바 수직 구분선 */
+QFrame#ToolbarDivider {
+    background-color: #e4e4e7;
+    max-width: 1px;
+    min-width: 1px;
+    margin: 6px 6px;
+}
+
+/* 중앙 QSplitter 핸들 */
+QSplitter::handle {
+    background-color: #e4e4e7;
+    width: 1px;
+}
+QSplitter::handle:hover {
+    background-color: #71717a;
+}
+
+/* 좌측 사이드바 패널 */
+QFrame#LeftSidebar {
+    background-color: #fafafa;
+    border-right: 1px solid #e4e4e7;
+}
+QLabel#SidebarTitle {
+    color: #27272a;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 4px 2px;
+}
+
+/* 썸네일 리스트 위젯 */
+QListWidget#ThumbnailList {
+    background-color: #ffffff;
+    border: 1px solid #e4e4e7;
+    border-radius: 6px;
+    padding: 6px 4px;
+    outline: none;
+}
+QListWidget#ThumbnailList::item {
+    background-color: transparent;
+    border: none;
+    margin: 2px 0px;
+    padding: 0px;
+}
+QListWidget#ThumbnailList::item:hover {
+    background-color: transparent;
+    border: none;
+}
+QListWidget#ThumbnailList::item:selected {
+    background-color: transparent;
+    border: none;
+}
+
+/* 우측 책갈피(Bookmark) 패널 */
+QFrame#RightBookmarkPanel {
+    background-color: #fafafa;
+    border-left: 1px solid #e4e4e7;
+}
+QListWidget#BookmarkList {
+    background-color: #ffffff;
+    border: 1px solid #e4e4e7;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+QListWidget#BookmarkList::item {
+    background-color: #ffffff;
+    border-bottom: 1px solid #f4f4f5;
+    border-radius: 4px;
+    padding: 7px 8px;
+    color: #3f3f46;
+}
+QListWidget#BookmarkList::item:hover {
+    background-color: #f4f4f5;
+    color: #18181b;
+}
+QListWidget#BookmarkList::item:selected {
+    background-color: #f4f4f5;
+    border: 1px solid #d4d4d8;
+    color: #18181b;
+    font-weight: bold;
+}
+
+/* 우측 끝 접혀있을 때 나타나는 열기 탭 버튼 */
+QPushButton#BookmarkOpenTabBtn {
+    background-color: #fafafa;
+    color: #3f3f46;
+    border: 1px solid #d4d4d8;
+    border-right: none;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+    padding: 12px 4px;
+    font-size: 11px;
+    font-weight: 700;
+}
+QPushButton#BookmarkOpenTabBtn:hover {
+    background-color: #f4f4f5;
+    color: #18181b;
+    border-color: #a1a1aa;
+}
+
+/* 사이드바 조작 버튼 공통 (그레이스케일 톤) */
+QPushButton#SmallSidebarBtn {
+    background-color: #ffffff;
+    color: #3f3f46;
+    border: 1px solid #d4d4d8;
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton#SmallSidebarBtn:hover {
+    background-color: #f4f4f5;
+    border-color: #a1a1aa;
+    color: #18181b;
+}
+QPushButton#SmallSidebarBtn:pressed {
+    background-color: #e4e4e7;
+}
+QPushButton#DeleteSidebarBtn {
+    background-color: #ffffff;
+    color: #52525b;
+    border: 1px solid #d4d4d8;
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton#DeleteSidebarBtn:hover {
+    background-color: #f4f4f5;
+    border-color: #71717a;
+    color: #18181b;
+}
+
+/* 중앙 메인 PDF 뷰어 (순백색 바탕면) */
+QScrollArea#CanvasScrollArea {
+    background-color: #ffffff;
+    border: none;
+}
+QWidget#CanvasContainer {
+    background-color: #ffffff;
+}
+QLabel#PageCanvasLabel {
+    background-color: #ffffff;
+    border: 1px solid #d4d4d8;
+    color: #71717a;
+    font-size: 14px;
+}
+
+/* 하단 상태표시줄 (그레이스케일 톤) */
+QStatusBar {
+    background-color: #fafafa;
+    color: #52525b;
+    border-top: 1px solid #e4e4e7;
+    padding: 2px 8px;
+}
+QStatusBar::item {
+    border: none;
+}
+QLabel#StatusPageLabel, QLabel#StatusZoomLabel, QLabel#StatusModeLabel {
+    color: #52525b;
+    font-size: 12px;
+    padding: 2px 10px;
+}
+QLabel#StatusModeBadge {
+    background-color: #27272a;
+    color: #ffffff;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-weight: bold;
+    font-size: 11px;
+}
