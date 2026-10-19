@@ -8,6 +8,10 @@ build/
 dist/
 releases/*.exe
 releases/**/*.exe
+releases/*.zip
+releases/**/*.zip
+releases/*.lnk
+releases/**/*.lnk
 
 # Virtual environments
 .venv/
