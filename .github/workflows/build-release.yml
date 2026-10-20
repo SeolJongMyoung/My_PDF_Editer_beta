@@ -53,13 +53,13 @@ jobs:
           # build.py 실행 -> releases/v{version}/QuickPDFEditor_v{version}.exe 생성
           python build.py
 
-          # 생성된 EXE 및 릴리스 노트 파일 경로 확인
-          $exeFile = Get-ChildItem -Path "releases" -Recurse -Filter "QuickPDFEditor_v*.exe" | Select-Object -First 1
+          # 생성된 EXE 및 해당 버전의 릴리스 노트 파일 경로 확인
+          $exeFile = Get-ChildItem -Path "releases" -Recurse -Filter "QuickPDFEditor_v*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $exeFile) {
             Write-Error "빌드된 QuickPDFEditor_v*.exe 파일을 찾을 수 없습니다."
             exit 1
           }
-          $noteFile = Get-ChildItem -Path "releases" -Recurse -Filter "RELEASE_NOTES_v*.txt" | Select-Object -First 1
+          $noteFile = Get-ChildItem -Path $exeFile.DirectoryName -Filter "RELEASE_NOTES_v*.txt" | Select-Object -First 1
           if ($noteFile) {
             Copy-Item $noteFile.FullName -Destination "release_body.txt" -Force
           }

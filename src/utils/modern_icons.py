@@ -145,6 +145,25 @@ class ModernIcons:
             painter.drawPath(path)
             painter.drawLine(QPointF(2.5, 13.5), QPointF(13.5, 13.5))
 
+        elif name == "cloud":
+            path = QPainterPath()
+            path.moveTo(4.5, 12.0)
+            path.cubicTo(2.0, 12.0, 1.8, 8.5, 4.0, 8.0)
+            path.cubicTo(3.8, 5.0, 7.2, 4.0, 8.6, 6.2)
+            path.cubicTo(10.2, 4.5, 13.2, 5.5, 12.6, 8.2)
+            path.cubicTo(14.5, 8.8, 14.2, 12.0, 11.8, 12.0)
+            path.closeSubpath()
+            painter.drawPath(path)
+
+        elif name == "stamp":
+            # 당초/변경 마크 (굵은 직사각형 도장 프레임 + 내부 텍스트 심볼)
+            painter.drawRoundedRect(QRectF(1.8, 4.0, 12.4, 8.0), 1.2, 1.2)
+            painter.drawLine(QPointF(4.4, 6.8), QPointF(6.8, 6.8))
+            painter.drawLine(QPointF(4.4, 9.2), QPointF(6.8, 9.2))
+            painter.drawLine(QPointF(8.0, 5.6), QPointF(8.0, 10.4))
+            painter.drawLine(QPointF(9.4, 6.8), QPointF(11.6, 6.8))
+            painter.drawLine(QPointF(9.4, 9.2), QPointF(11.6, 9.2))
+
         elif name == "bookmark":
             path = QPainterPath()
             path.moveTo(4.0, 2.5)
@@ -201,6 +220,11 @@ class ModernIcons:
             painter.drawEllipse(QRectF(2.5, 2.5, 11.0, 11.0))
             painter.drawLine(QPointF(8.0, 7.3), QPointF(8.0, 11.2))
             painter.drawPoint(QPointF(8.0, 5.0))
+
+        elif name == "scroll":
+            # 연속 스크롤 (위아래 이어진 두 페이지 아이콘)
+            painter.drawRoundedRect(QRectF(3.5, 2.0, 9.0, 5.2), 1.0, 1.0)
+            painter.drawRoundedRect(QRectF(3.5, 8.8, 9.0, 5.2), 1.0, 1.0)
 
         painter.end()
         pixmap.setDevicePixelRatio(scale)

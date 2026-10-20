@@ -94,10 +94,16 @@ def main():
     args = parser.parse_args()
     if args.command == "bump":
         new_ver = bump_version_in_file(args.part, args.summary, args.change)
+        try:
+            from build import sync_version_and_docs
+
+            sync_version_and_docs(ROOT_DIR)
+        except Exception as e:
+            print(f"[안내] 도움말/README 동기화 중 예외 발생: {e}")
         commit_prefix = "fix" if args.part == "patch" else "feat"
         msg = args.summary or f"v{new_ver} 버전 업데이트"
         print("\n다음 추천 Git 명령어:")
-        print(f'  git add src/__version__.py')
+        print(f'  git add src/__version__.py README.md assets/help_metadata.json')
         print(f'  git commit -m "{commit_prefix}: {msg} (v{new_ver})"')
     else:
         parser.print_help()

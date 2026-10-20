@@ -8,29 +8,183 @@
 """
 
 import argparse
+import importlib
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from datetime import datetime
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 # 프로젝트 루트 경로 보장
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+import src.__version__ as version_mod  # noqa: E402
 from src.__version__ import (  # noqa: E402
     APP_DESCRIPTION,
     APP_NAME,
     APP_VERSION,
     BUILD_DATE,
+    KEY_FEATURES,
+    KEYBOARD_SHORTCUTS,
     RELEASE_NOTES,
     VERSION_MAJOR,
     VERSION_MINOR,
     VERSION_PATCH,
     __version__,
 )
+
+
+def sync_version_and_docs(
+    root_dir: str,
+    bump_part: Optional[str] = None,
+    summary: str = "",
+    changes: Optional[List[str]] = None,
+) -> str:
+    """
+    빌드 시점에 src/__version__.py, README.md, assets/help_metadata.json을
+    모두 최신 버전·빌드일자·변경내역·주요기능으로 자동 동기화합니다.
+    """
+    version_file = os.path.join(root_dir, "src", "__version__.py")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    if bump_part:
+        from git_workflow import bump_version_in_file
+
+        bump_version_in_file(bump_part, summary, changes or [])
+    else:
+        # BUILD_DATE를 오늘 날짜로 최신화하고 추가 변경사항(--change)이 있으면 반영
+        with open(version_file, "r", encoding="utf-8") as f:
+            v_content = f.read()
+        v_content_new = re.sub(
+            r'BUILD_DATE:\s*str\s*=\s*"[^"]*"',
+            f'BUILD_DATE: str = "{today_str}"',
+            v_content,
+        )
+        if v_content_new != v_content:
+            with open(version_file, "w", encoding="utf-8") as f:
+                f.write(v_content_new)
+
+    importlib.reload(version_mod)
+    cur_ver = version_mod.__version__
+    cur_app_ver = version_mod.APP_VERSION
+    cur_build_date = version_mod.BUILD_DATE
+    cur_features = version_mod.KEY_FEATURES
+    cur_shortcuts = version_mod.KEYBOARD_SHORTCUTS
+    cur_notes = version_mod.RELEASE_NOTES
+
+    # 1. assets/help_metadata.json 생성 (도움말 다이얼로그용 최신 빌드 스냅샷)
+    assets_dir = os.path.join(root_dir, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    help_meta_path = os.path.join(assets_dir, "help_metadata.json")
+    help_payload = {
+        "app_name": version_mod.APP_NAME,
+        "app_version": cur_app_ver,
+        "build_date": cur_build_date,
+        "app_description": version_mod.APP_DESCRIPTION,
+        "key_features": cur_features,
+        "keyboard_shortcuts": cur_shortcuts,
+        "release_notes": cur_notes,
+    }
+    with open(help_meta_path, "w", encoding="utf-8") as f:
+        json.dump(help_payload, f, ensure_ascii=False, indent=2)
+
+    # 2. README.md의 주요 기능 / 단축키 안내 / 변경 이력 / 버전 번호 자동 동기화
+    readme_path = os.path.join(root_dir, "README.md")
+    if os.path.exists(readme_path):
+        with open(readme_path, "r", encoding="utf-8") as f:
+            readme_text = f.read()
+
+        # 주요 기능 마크다운 블록 생성
+        feat_lines = ["## 주요 기능 (Key Features)\n"]
+        for group in cur_features:
+            feat_lines.append(f"### {group.get('title', '')}")
+            for item in group.get("items", []):
+                feat_lines.append(f"- {item}")
+            feat_lines.append("")
+        feat_block = "\n".join(feat_lines).rstrip() + "\n"
+
+        readme_text = re.sub(
+            r"## 주요 기능 \(Key Features\).*?(?=\n---\n)",
+            feat_block,
+            readme_text,
+            flags=re.DOTALL,
+        )
+
+        # 단축키 안내 마크다운 블록 생성
+        sc_lines = [
+            "## 단축키 안내 (Keyboard Shortcuts)\n",
+            "| 분류 | 단축키 | 동작 설명 |",
+            "| :--- | :--- | :--- |",
+        ]
+        for sc in cur_shortcuts:
+            cat = sc.get("category", "")
+            key = sc.get("shortcut", "")
+            desc = sc.get("description", "")
+            sc_lines.append(f"| **{cat}** | `{key}` | {desc} |")
+        sc_block = "\n".join(sc_lines) + "\n"
+
+        readme_text = re.sub(
+            r"## 단축키 안내 \(Keyboard Shortcuts\).*?(?=\n---\n)",
+            sc_block,
+            readme_text,
+            flags=re.DOTALL,
+        )
+
+        # 변경 이력 (Changelog) 마크다운 블록 생성
+        cl_lines = ["## 변경 이력 (Changelog)\n"]
+        for note in cur_notes:
+            cl_lines.append(
+                f"### {note.get('version', '')} ({note.get('date', '')})"
+            )
+            for ch in note.get("changes", []):
+                cl_lines.append(f"- {ch}")
+            cl_lines.append("")
+        cl_block = "\n".join(cl_lines).rstrip() + "\n"
+
+        readme_text = re.sub(
+            r"## 변경 이력 \(Changelog\).*\Z",
+            cl_block,
+            readme_text,
+            flags=re.DOTALL,
+        )
+
+        # README 내 실행 파일 버전 표기 최신화 (예: QuickPDFEditor_v1.0.0.exe -> QuickPDFEditor_v{cur_ver}.exe)
+        readme_text = re.sub(
+            r"QuickPDFEditor_v\d+\.\d+\.\d+\.exe",
+            f"QuickPDFEditor_v{cur_ver}.exe",
+            readme_text,
+        )
+
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(readme_text)
+
+    # 3. releases/v{cur_ver}/RELEASE_NOTES_v{cur_ver}.txt 자동 생성/갱신
+    release_dir = os.path.join(root_dir, "releases", f"v{cur_ver}")
+    os.makedirs(release_dir, exist_ok=True)
+    notes_txt_path = os.path.join(release_dir, f"RELEASE_NOTES_v{cur_ver}.txt")
+    exe_filename = f"QuickPDFEditor_v{cur_ver}.exe"
+    with open(notes_txt_path, "w", encoding="utf-8") as f:
+        f.write("============================================================\n")
+        f.write(
+            f" {version_mod.APP_NAME} ({cur_app_ver}) - 빌드 일자: {cur_build_date}\n"
+        )
+        f.write(f" 실행 파일: {exe_filename}\n")
+        f.write("============================================================\n\n")
+        for note in cur_notes:
+            f.write(f"[{note.get('version')}] ({note.get('date')}) - {note.get('summary')}\n")
+            for change in note.get("changes", []):
+                f.write(f"  - {change}\n")
+            f.write("\n")
+
+    print(
+        f"[0/4] 도움말 메타데이터(assets/help_metadata.json), README.md 및 릴리스 노트 동기화 완료 -> {cur_app_ver} ({cur_build_date})"
+    )
+    return cur_ver
 
 
 def parse_version_tuple(version_str: str) -> Tuple[int, int, int, int]:
@@ -169,6 +323,7 @@ def build_pyinstaller_command(
         "--hidden-import=PyQt6.QtCore",
         "--hidden-import=PyQt6.QtGui",
         "--hidden-import=PyQt6.QtWidgets",
+        "--hidden-import=PyQt6.QtPrintSupport",
         # 불필요한 타 GUI 프레임워크 및 무거운 외부 패키지 제외 (빌드 속도/용량 최적화)
         "--exclude-module=PyQt5",
         "--exclude-module=PySide2",
@@ -211,10 +366,12 @@ def archive_to_releases(
     notes_txt_path = os.path.join(release_dir, f"RELEASE_NOTES_v{version_str}.txt")
     with open(notes_txt_path, "w", encoding="utf-8") as f:
         f.write(f"============================================================\n")
-        f.write(f" {APP_NAME} ({APP_VERSION}) - 빌드 일자: {BUILD_DATE}\n")
+        f.write(
+            f" {version_mod.APP_NAME} ({version_mod.APP_VERSION}) - 빌드 일자: {version_mod.BUILD_DATE}\n"
+        )
         f.write(f" 실행 파일: {exe_filename}\n")
         f.write(f"============================================================\n\n")
-        for note in RELEASE_NOTES:
+        for note in version_mod.RELEASE_NOTES:
             f.write(f"[{note.get('version')}] ({note.get('date')}) - {note.get('summary')}\n")
             for change in note.get("changes", []):
                 f.write(f"  - {change}\n")
@@ -226,27 +383,53 @@ def archive_to_releases(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="윈도우 버전 메타데이터 포함 PyInstaller 자동 빌드 스크립트"
+        description="윈도우 버전 메타데이터 및 도움말/README 자동 최신화 PyInstaller 빌드 스크립트"
     )
     parser.add_argument(
         "--prefix",
         type=str,
         default="QuickPDFEditor",
-        help="생성할 실행 파일명 접두어 (기본값: QuickPDFEditor -> QuickPDFEditor_v1.0.0.exe)",
+        help="생성할 실행 파일명 접두어 (기본값: QuickPDFEditor -> QuickPDFEditor_v1.1.0.exe)",
+    )
+    parser.add_argument(
+        "--bump",
+        choices=["patch", "minor", "major"],
+        default=None,
+        help="빌드 전 시맨틱 버전(patch/minor/major)을 자동으로 올리고 변경 이력을 추가합니다",
+    )
+    parser.add_argument(
+        "--summary",
+        "-s",
+        type=str,
+        default="",
+        help="--bump 사용 시 이번 빌드 버전의 한 줄 요약",
+    )
+    parser.add_argument(
+        "--change",
+        "-c",
+        action="append",
+        default=[],
+        help="--bump 사용 시 이번 빌드의 세부 변경 사항 (여러 번 지정 가능)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="실제 PyInstaller 컴파일을 생략하고 메타데이터/아이콘 생성 및 명령어만 검증",
+        help="실제 PyInstaller 컴파일을 생략하고 버전/도움말/README 동기화 및 아이콘·메타데이터 생성만 검증",
     )
     args = parser.parse_args()
 
-    version_str = __version__
+    # 0. 버전·빌드일자·도움말 메타데이터(assets/help_metadata.json) 및 README.md 자동 동기화
+    version_str = sync_version_and_docs(
+        root_dir=ROOT_DIR,
+        bump_part=args.bump,
+        summary=args.summary,
+        changes=args.change,
+    )
     exe_base_name = f"{args.prefix}_v{version_str}"
     exe_filename = f"{exe_base_name}.exe"
 
     print("============================================================")
-    print(f" [{APP_NAME}] 자동 빌드 시작 - 버전: v{version_str}")
+    print(f" [{version_mod.APP_NAME}] 자동 빌드 시작 - 버전: v{version_str}")
     print(f" 출력 대상 파일명: {exe_filename}")
     print("============================================================")
 

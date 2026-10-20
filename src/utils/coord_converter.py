@@ -50,3 +50,22 @@ class CoordConverter:
         x = (qt_point.x() / zoom) + float(page_origin.x)
         y = (qt_point.y() / zoom) + float(page_origin.y)
         return fitz.Point(x, y)
+
+    @staticmethod
+    def pdf_rect_to_screen_rect(
+        pdf_rect: fitz.Rect,
+        zoom: float,
+        page_origin: fitz.Point = fitz.Point(0, 0),
+    ) -> QRectF:
+        """
+        PDF 원본 좌표(fitz.Rect)를 화면(QLabel 내부) 픽셀 사각형(QRectF)으로 변환합니다.
+        """
+        if zoom <= 0:
+            zoom = 1.0
+        ox = float(page_origin.x)
+        oy = float(page_origin.y)
+        x0 = (float(pdf_rect.x0) - ox) * zoom
+        y0 = (float(pdf_rect.y0) - oy) * zoom
+        w = float(pdf_rect.width) * zoom
+        h = float(pdf_rect.height) * zoom
+        return QRectF(x0, y0, w, h)

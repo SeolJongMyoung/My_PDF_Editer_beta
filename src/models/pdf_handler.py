@@ -1,3 +1,4 @@
+import math
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
@@ -377,6 +378,21 @@ class PdfHandler:
             return fitz.Point(0, 0)
         return self.doc[page_num].rect.tl
 
+    def get_page_display_size(self, page_num: int, zoom: float = 1.0) -> Tuple[int, int]:
+        """픽셀 렌더링 없이 특정 페이지의 화면 표시 크기(width, height)만 빠르게 계산합니다."""
+        if not self._validate_page_num(page_num):
+            return (595, 842)
+        zoom = max(0.1, min(zoom, 10.0))
+        rect = self.doc[page_num].rect * fitz.Matrix(zoom, zoom)
+        irect = rect.irect
+        return (max(1, irect.width), max(1, irect.height))
+
+    def get_all_page_display_sizes(self, zoom: float = 1.0) -> List[Tuple[int, int]]:
+        """전체 페이지의 화면 표시 크기(width, height) 리스트를 픽셀 렌더링 없이 즉시 반환합니다."""
+        if self.doc is None:
+            return []
+        return [self.get_page_display_size(i, zoom) for i in range(len(self.doc))]
+
     # -------------------------------------------------------------------------
     # 1. 문서 열기 및 총 페이지 수 반환
     # -------------------------------------------------------------------------
@@ -408,6 +424,21 @@ class PdfHandler:
             self.doc = None
             self.file_path = None
             return 0
+
+    def close_document(self):
+        """현재 열려 있는 PDF 문서를 닫고 내부 상태 및 히스토리를 초기화합니다."""
+        if self.doc is not None:
+            try:
+                self.doc.close()
+            except Exception:
+                pass
+        self.doc = None
+        self.file_path = None
+        self._state_id = 0
+        self._saved_state_id = 0
+        self._next_state_seq = 1
+        self._undo_stack.clear()
+        self._redo_stack.clear()
 
     # -------------------------------------------------------------------------
     # 2. 특정 페이지를 QImage(또는 QPixmap)로 변환하여 반환
@@ -715,7 +746,10 @@ class PdfHandler:
     # 4. 지정된 사각 영역 텍스트 하이라이트 주석 추가
     # -------------------------------------------------------------------------
     def add_highlight(
-        self, page_num: int, rect: Union[fitz.Rect, Tuple[float, float, float, float]]
+        self,
+        page_num: int,
+        rect: Union[fitz.Rect, Tuple[float, float, float, float]],
+        color: Tuple[float, float, float] = (1.0, 0.95, 0.0),
     ) -> bool:
         if not self._validate_page_num(page_num):
             return False
@@ -735,7 +769,7 @@ class PdfHandler:
             else:
                 annot = page.add_highlight_annot(target_rect)
 
-            annot.set_colors(stroke=(1.0, 0.95, 0.0))
+            annot.set_colors(stroke=color)
             annot.update()
             self._advance_state()
             return True
@@ -751,6 +785,7 @@ class PdfHandler:
         page_num: int,
         rect: Union[fitz.Rect, Tuple[float, float, float, float]],
         color: Tuple[float, float, float] = (1, 0, 0),
+        width: float = 2.0,
     ) -> bool:
         if not self._validate_page_num(page_num):
             return False
@@ -765,13 +800,304 @@ class PdfHandler:
 
             annot = page.add_rect_annot(target_rect)
             annot.set_colors(stroke=color)
-            annot.set_border(width=2.0)
+            annot.set_border(width=max(0.5, float(width)))
             annot.update()
             self._advance_state()
             return True
         except Exception as e:
             print(f"[PdfHandler] 박스 주석 추가 오류 (page={page_num}): {e}")
             return False
+
+    # -------------------------------------------------------------------------
+    # 5-2. 클라우드 마크(Revision Cloud) 다각형 주석 추가
+    # -------------------------------------------------------------------------
+    def add_cloud_polygon_annotation(
+        self,
+        page_num: int,
+        points: List[Union[fitz.Point, Tuple[float, float]]],
+        color: Tuple[float, float, float] = (0.93, 0.2, 0.2),
+        cloud_scale: float = 2.5,
+        width: float = 2.2,
+    ) -> bool:
+        """
+        다중 클릭으로 지정된 다각형 꼭짓점(points, 최소 3점)을 따라
+        바깥쪽으로 볼록하게 부풀어 오른 구름 모양(Revision Cloud) 마크를 생성합니다.
+        기본 MuPDF 구름(chord ~9.5pt) 대비 약 2.5배 크기(chord ~24pt)로 선명하게 렌더링됩니다.
+        """
+        if not self._validate_page_num(page_num) or len(points) < 3:
+            return False
+
+        try:
+            fitz_pts: List[fitz.Point] = []
+            for pt in points:
+                if isinstance(pt, fitz.Point):
+                    p = pt
+                else:
+                    p = fitz.Point(float(pt[0]), float(pt[1]))
+                if not fitz_pts or math.hypot(p.x - fitz_pts[-1].x, p.y - fitz_pts[-1].y) > 1.0:
+                    fitz_pts.append(p)
+
+            if len(fitz_pts) > 2 and math.hypot(fitz_pts[0].x - fitz_pts[-1].x, fitz_pts[0].y - fitz_pts[-1].y) <= 1.0:
+                fitz_pts.pop()
+
+            if len(fitz_pts) < 3:
+                return False
+
+            # 다각형의 부호 있는 면적(Signed Area) 계산 (PDF 화면 좌표계: Y축 아래 방향 증가)
+            # signed_area > 0 이면 시계 방향(CW)이므로 바깥쪽 법선은 (ty, -tx)
+            signed_area = 0.0
+            n_pts = len(fitz_pts)
+            for i in range(n_pts):
+                p1 = fitz_pts[i]
+                p2 = fitz_pts[(i + 1) % n_pts]
+                signed_area += p1.x * p2.y - p2.x * p1.y
+
+            if signed_area < 0:
+                fitz_pts.reverse()
+
+            self._push_undo_snapshot()
+            page = self.doc[page_num]
+            shape = page.new_shape()
+
+            # 기본 MuPDF 구름 아크 폭(~9.5pt)의 약 2.5배인 24.0pt 기준
+            scale_val = max(0.5, float(cloud_scale))
+            target_chord = 9.6 * scale_val
+            max_bulge = 7.6 * scale_val
+            min_bulge = 4.0 * scale_val
+
+            n_pts = len(fitz_pts)
+            for i in range(n_pts):
+                p1 = fitz_pts[i]
+                p2 = fitz_pts[(i + 1) % n_pts]
+                dx = p2.x - p1.x
+                dy = p2.y - p1.y
+                edge_len = math.hypot(dx, dy)
+                if edge_len < 1e-3:
+                    continue
+
+                tx = dx / edge_len
+                ty = dy / edge_len
+                # 시계 방향(CW) 다각형 기준 바깥쪽 단위 법선 벡터
+                nx = ty
+                ny = -tx
+
+                num_arcs = max(1, round(edge_len / target_chord))
+                chord = edge_len / num_arcs
+                # 바깥쪽으로 부풀어 오르는 구름 볼록 높이
+                bulge_h = min(max_bulge, max(min_bulge, chord * 0.75))
+
+                for k in range(num_arcs):
+                    a = fitz.Point(p1.x + dx * (k / num_arcs), p1.y + dy * (k / num_arcs))
+                    b = fitz.Point(p1.x + dx * ((k + 1) / num_arcs), p1.y + dy * ((k + 1) / num_arcs))
+                    # 3차 베지어 제어점: 바깥쪽 법선 방향으로 아크를 풍성하게 확장
+                    c1 = fitz.Point(
+                        a.x + tx * (chord * 0.12) + nx * bulge_h,
+                        a.y + ty * (chord * 0.12) + ny * bulge_h,
+                    )
+                    c2 = fitz.Point(
+                        b.x - tx * (chord * 0.12) + nx * bulge_h,
+                        b.y - ty * (chord * 0.12) + ny * bulge_h,
+                    )
+                    shape.draw_bezier(a, c1, c2, b)
+
+            shape.finish(
+                color=color,
+                fill=None,
+                width=max(0.5, float(width)),
+                lineJoin=1,
+                lineCap=1,
+                closePath=False,
+            )
+            shape.commit()
+            self._advance_state()
+            return True
+        except Exception as e:
+            print(f"[PdfHandler] 클라우드 마크 추가 오류 (page={page_num}): {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # 5-3. 당초/변경 마크 (사각형 테두리 + 내부 중앙 텍스트) 추가
+    # -------------------------------------------------------------------------
+    def _draw_stamp_mark_on_page(
+        self,
+        page: fitz.Page,
+        stamp_text: str = "당초",
+        box_width: float = 72.0,
+        box_height: float = 32.0,
+        border_color: Tuple[float, float, float] = (0.90, 0.08, 0.08),
+        border_width: float = 2.5,
+        font_key: str = "malgun",
+        font_size: float = 15.0,
+        is_bold: bool = True,
+        top_margin_pt: float = 24.0,
+        right_margin_pt: float = 28.0,
+        custom_rect: Optional[fitz.Rect] = None,
+    ):
+        p_rect = page.rect
+        bw = max(24.0, float(box_width))
+        bh = max(16.0, float(box_height))
+
+        if custom_rect is not None and not custom_rect.is_empty:
+            box_rect = custom_rect
+        else:
+            x1 = p_rect.x1 - float(right_margin_pt)
+            x0 = x1 - bw
+            y0 = p_rect.y0 + float(top_margin_pt)
+            y1 = y0 + bh
+            box_rect = fitz.Rect(x0, y0, x1, y1)
+
+        # 1) 사각형 테두리 그리기
+        shape = page.new_shape()
+        shape.draw_rect(box_rect)
+        shape.finish(
+            color=border_color,
+            fill=None,
+            width=max(0.5, float(border_width)),
+            lineJoin=0,
+            lineCap=0,
+        )
+        shape.commit()
+
+        # 2) 내부 중앙에 '당초' / '변경' 텍스트 그리기
+        clean_label = (stamp_text or "당초").strip()
+        if not clean_label:
+            clean_label = "당초"
+
+        font_info = self.available_fonts.get(font_key)
+        font_file = None
+        used_native_bold = False
+        if font_info:
+            if is_bold and font_info.get("bold"):
+                font_file = font_info["bold"]
+                used_native_bold = True
+            else:
+                font_file = font_info.get("regular")
+        if not font_file:
+            font_file = self.font_path
+
+        try:
+            font_obj = fitz.Font(fontfile=font_file) if font_file else fitz.Font("helv")
+        except Exception:
+            font_obj = (
+                fitz.Font(fontfile=self.font_path)
+                if self.font_path
+                else fitz.Font("helv")
+            )
+
+        fsize = max(6.0, float(font_size))
+        try:
+            text_w = font_obj.text_length(clean_label, fontsize=fsize)
+        except Exception:
+            text_w = fsize * len(clean_label)
+
+        tx = box_rect.x0 + (box_rect.width - text_w) / 2.0
+        ty = box_rect.y0 + (box_rect.height / 2.0) + (fsize * 0.36)
+
+        tw = fitz.TextWriter(p_rect)
+        tw.append(fitz.Point(tx, ty), clean_label, font=font_obj, fontsize=fsize)
+        if is_bold and not used_native_bold:
+            bold_offset = max(0.4, fsize * 0.04)
+            tw.append(
+                fitz.Point(tx + bold_offset, ty),
+                clean_label,
+                font=font_obj,
+                fontsize=fsize,
+            )
+        tw.write_text(page, color=border_color)
+
+    def add_stamp_mark_annotation(
+        self,
+        page_num: int,
+        stamp_text: str = "당초",
+        box_width: float = 72.0,
+        box_height: float = 32.0,
+        border_color: Tuple[float, float, float] = (0.90, 0.08, 0.08),
+        border_width: float = 2.5,
+        font_key: str = "malgun",
+        font_size: float = 15.0,
+        is_bold: bool = True,
+        top_margin_pt: float = 24.0,
+        right_margin_pt: float = 28.0,
+        custom_rect: Optional[fitz.Rect] = None,
+    ) -> bool:
+        """단일 페이지 우측 상단(또는 지정 영역)에 당초/변경 마크를 추가합니다. (Undo/Redo 지원)"""
+        if not self._validate_page_num(page_num):
+            return False
+        try:
+            self._push_undo_snapshot()
+            page = self.doc[page_num]
+            self._draw_stamp_mark_on_page(
+                page=page,
+                stamp_text=stamp_text,
+                box_width=box_width,
+                box_height=box_height,
+                border_color=border_color,
+                border_width=border_width,
+                font_key=font_key,
+                font_size=font_size,
+                is_bold=is_bold,
+                top_margin_pt=top_margin_pt,
+                right_margin_pt=right_margin_pt,
+                custom_rect=custom_rect,
+            )
+            self._advance_state()
+            return True
+        except Exception as e:
+            print(f"[PdfHandler] 당초/변경 마크 추가 오류 (page={page_num}): {e}")
+            return False
+
+    def apply_stamp_marks_by_page(
+        self,
+        page_stamp_map: Dict[int, str],
+        box_width: float = 72.0,
+        box_height: float = 32.0,
+        border_color: Tuple[float, float, float] = (0.90, 0.08, 0.08),
+        border_width: float = 2.5,
+        font_key: str = "malgun",
+        font_size: float = 15.0,
+        is_bold: bool = True,
+        top_margin_pt: float = 24.0,
+        right_margin_pt: float = 28.0,
+    ) -> List[int]:
+        """
+        페이지별로 지정된 당초/변경 마크(page_stamp_map: {page_idx: '당초'|'변경'})를
+        각 페이지 우측 상단에 일괄 삽입합니다. (Undo/Redo 1단계 스냅샷 지원)
+        """
+        if self.doc is None or not page_stamp_map:
+            return []
+
+        valid_items = [
+            (int(p), str(lbl).strip())
+            for p, lbl in sorted(page_stamp_map.items())
+            if self._validate_page_num(int(p)) and str(lbl).strip()
+        ]
+        if not valid_items:
+            return []
+
+        try:
+            self._push_undo_snapshot()
+            modified_pages: List[int] = []
+            for page_idx, lbl in valid_items:
+                page = self.doc[page_idx]
+                self._draw_stamp_mark_on_page(
+                    page=page,
+                    stamp_text=lbl,
+                    box_width=box_width,
+                    box_height=box_height,
+                    border_color=border_color,
+                    border_width=border_width,
+                    font_key=font_key,
+                    font_size=font_size,
+                    is_bold=is_bold,
+                    top_margin_pt=top_margin_pt,
+                    right_margin_pt=right_margin_pt,
+                )
+                modified_pages.append(page_idx)
+            self._advance_state()
+            return modified_pages
+        except Exception as e:
+            print(f"[PdfHandler] 페이지별 당초/변경 마크 일괄 적용 오류: {e}")
+            return []
 
     # -------------------------------------------------------------------------
     # 6. 페이지 관리 (삭제, 회전, 드래그앤드롭 슬롯 이동, 추출 저장)
@@ -1100,6 +1426,77 @@ class PdfHandler:
         except Exception as e:
             print(f"[PdfHandler] 책갈피 삭제 오류: {e}")
             return False
+
+    # -------------------------------------------------------------------------
+    # 7-2. 쪽번호 넣기 (형식: -1-, 시작 페이지 지정, 하단 좌/중/우 및 상/하 위치 조정)
+    # -------------------------------------------------------------------------
+    def insert_page_numbers(
+        self,
+        start_page_index: int = 0,
+        end_page_index: Optional[int] = None,
+        start_number: int = 1,
+        alignment: str = "center",
+        bottom_offset_pt: float = 28.0,
+        horizontal_margin_pt: float = 42.0,
+        font_size: float = 10.5,
+        format_template: str = "-{n}-",
+    ) -> List[int]:
+        """
+        지정한 시작 페이지부터 끝 페이지까지 하단(좌측/중앙/우측) 및 지정한 상·하 오프셋 위치에
+        '-1-' 형식의 쪽번호를 일괄 삽입합니다. (Undo/Redo 10단계 스냅샷 지원)
+        """
+        if self.doc is None or len(self.doc) == 0:
+            return []
+
+        total = len(self.doc)
+        s_idx = max(0, min(total - 1, int(start_page_index)))
+        e_idx = (
+            total - 1
+            if end_page_index is None
+            else max(s_idx, min(total - 1, int(end_page_index)))
+        )
+
+        try:
+            self._push_undo_snapshot()
+            modified_pages: List[int] = []
+
+            for offset, page_idx in enumerate(range(s_idx, e_idx + 1)):
+                page = self.doc[page_idx]
+                rect = page.rect
+                page_num_val = int(start_number) + offset
+                text = format_template.format(n=page_num_val)
+
+                text_w = fitz.get_text_length(
+                    text, fontname="helv", fontsize=float(font_size)
+                )
+
+                if alignment == "left":
+                    x = rect.x0 + float(horizontal_margin_pt)
+                elif alignment == "right":
+                    x = rect.x1 - float(horizontal_margin_pt) - text_w
+                else:
+                    x = rect.x0 + (rect.width - text_w) / 2.0
+
+                baseline_y = rect.y1 - float(bottom_offset_pt)
+                baseline_y = max(
+                    rect.y0 + float(font_size) + 4.0,
+                    min(rect.y1 - 4.0, baseline_y),
+                )
+
+                page.insert_text(
+                    fitz.Point(x, baseline_y),
+                    text,
+                    fontsize=float(font_size),
+                    fontname="helv",
+                    color=(0.0, 0.0, 0.0),
+                )
+                modified_pages.append(page_idx)
+
+            self._advance_state()
+            return modified_pages
+        except Exception as e:
+            print(f"[PdfHandler] 쪽번호 삽입 오류: {e}")
+            return []
 
     # -------------------------------------------------------------------------
     # 8. 변경된 문서 저장
